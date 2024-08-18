@@ -1,5 +1,6 @@
 import socket
 import threading
+import os
 
 try:
     serverSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -7,7 +8,7 @@ except:
     print("Unable to create socket")
 
 hostName = "0.0.0.0"
-port = 12345
+port = int(os.environ.get('PORT', 8000))
 serverSocket.bind((hostName,port))
 serverSocket.listen()
 
