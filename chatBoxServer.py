@@ -2,49 +2,84 @@ import socket
 import threading
 import os
 
+# Predefined secret key for the client
+SECRET_KEY = "key321"
+
 try:
-    serverSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-except:
-    print("Unable to create socket")
+    serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+except Exception as e:
+    print(f"Unable to create socket: {e}")
+    exit(1)
 
 hostName = "0.0.0.0"
 port = int(os.environ.get('PORT', 8000))
-serverSocket.bind((hostName,port))
+serverSocket.bind((hostName, port))
 serverSocket.listen()
 
 clients = []
 nicknames = []
 
-def sendInfo(payLoad):
+def broadcast(message):
     for client in clients:
-        client.send(bytes(payLoad,'utf-8'))
-        
-def handleClients(clientSocket):
+        try:
+            client.send(message)
+        except Exception as e:
+            print(f"Error sending message: {e}")
+            remove_client(client)
+
+def handle_client(clientSocket):
     while True:
         try:
-            data = clientSocket.recv(1024)
-            sendInfo(data.decode('utf-8'))
-        except:
-            index = clients.index(clientSocket)
-            clients.remove(clientSocket)
-            clientSocket.close()
-            nickname = nicknames[index]
-            nicknames.remove(nickname)
-            sendInfo('{} has left the chat!'.format(nickname))
-            print("{} has disconnected".format(nickname))
+            message = clientSocket.recv(1024)
+            if message:
+                broadcast(message)
+            else:
+                remove_client(clientSocket)
+                break
+        except Exception as e:
+            print(f"Error handling client: {e}")
+            remove_client(clientSocket)
             break
+
+def remove_client(clientSocket):
+    if clientSocket in clients:
+        index = clients.index(clientSocket)
+        clients.remove(clientSocket)
+        nickname = nicknames[index]
+        nicknames.remove(nickname)
+        clientSocket.close()
+        broadcast(f'{nickname.decode("utf-8")} has left the chat!'.encode('utf-8'))
+        print(f"{nickname.decode('utf-8')} has disconnected")
 
 def receive():
     while True:
-        clientSocket,addr = serverSocket.accept()
-        print("Connected to " + str(addr))
-        clientSocket.send(bytes("Nickname",'utf-8'))
-        nickname = clientSocket.recv(1024)
-        clients.append(clientSocket)
-        nicknames.append(nickname)
-        sendInfo('{} has joined the chat'.format(nickname))
-        
-        thread = threading.Thread(target=handleClients,args=(clientSocket,))
-        thread.start()
-    
+        try:
+            clientSocket, addr = serverSocket.accept()
+            print(f"Connected to {addr}")
+
+            # Expect the secret key from the client
+            clientSocket.send("Secret Key:".encode('utf-8'))
+            client_key = clientSocket.recv(1024).decode('utf-8')
+
+            if client_key == SECRET_KEY:
+                clientSocket.send("Nickname".encode('utf-8'))
+                nickname = clientSocket.recv(1024)
+
+                if nickname:
+                    nicknames.append(nickname)
+                    clients.append(clientSocket)
+                    print(f"Nickname of the client is {nickname.decode('utf-8')}")
+                    broadcast(f'{nickname.decode("utf-8")} has joined the chat!'.encode('utf-8'))
+                    
+                    thread = threading.Thread(target=handle_client, args=(clientSocket,))
+                    thread.start()
+                else:
+                    clientSocket.close()
+            else:
+                print("Client provided incorrect secret key. Connection refused.")
+                clientSocket.send("Invalid secret key. Connection refused.".encode('utf-8'))
+                clientSocket.close()
+        except Exception as e:
+            print(f"Error accepting connections: {e}")
+
 receive()
